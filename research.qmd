@@ -1,0 +1,114 @@
+---
+pagetitle: "Research - Yiyang Chen"
+toc: true
+---
+
+# Research Interest
+
+My goal is to study the structure and function of the human brain quantitatively and to discover how biological mechanisms give rise to cognitive abilities. To this end, I am interested in using high-throughput single-cell sequencing to map the mammalian brain connectome, and in overlaying each cell's epigenomic identity or in-vivo activity onto that connectome to link neuronal population dynamics with cell biology.
+
+Recent advances in sequencing (e.g., the MAPseq/BARseq family and Connectome-seq) and imaging (e.g., wide-field voltage imaging and expansion microscopy) are making a functional connectome of the mammalian brain increasingly feasible. Linking activity to structural or sequencing readouts in the same cells remains an open problem, but I am hopeful that future methods will combine the scalability of sequencing with the direct observation of activity that imaging provides, and I want to help build these methods and apply them to the study of brain structure and function.
+
+# Luo Lab at UCLA
+
+My interest in the molecular and cellular processes behind cognition led me in late 2023 to the Luo Lab at UCLA, a neuroepigenomics group (epigenomics studies how chemical and structural modifications to chromatin regulate gene expression). There, I help develop photonic-indexing sequencing (pi-seq, also called PSI-seq), a new technology for mapping epigenomically defined cell types in mammalian brain tissue.
+
+## Pi-seq/PSI-seq
+
+Pi-seq uses light to assign DNA barcodes to individual cells according to their location in tissue, producing spatially resolved single-cell profiles of DNA methylation and chromatin conformation that let us study cell-type-specific gene regulation in the brain. For this project, I designed the single-cell spatial barcoding methods, the statistical decoders that recover each cell's barcode from sequencing reads, and the optofluidic microscope that automates spatial encoding.
+
+In a pi-seq experiment, each cell receives a unique combination of DNA barcode segments that encodes its spatial identity, built up over successive rounds of patterned photocleavage and barcode insertion. To give thousands of cells unique barcodes in situ, I developed a combinatorial indexing scheme (the "bit-scheme") that determines which cells are photocleaved in each round, and therefore which barcode segments each cell receives.
+
+<blockquote>Patterned photocleavage builds a unique barcode sequence for each cell</blockquote>
+![](images/luo_lab_pre_20260309_sl81-83.gif)
+
+Applied to a whole tissue section, the bit-scheme gives every segmented cell its own sequence of indexing rounds. The bit-scheme design tools are part of Mercury, the software I wrote to run the pi-seq microscope, and are released as an open-source Python package, [Mercury-Redstone](https://github.com/yiyangc22/Mercury-Redstone) (DOI: [10.5281/zenodo.22650611](https://doi.org/10.5281/zenodo.22650611)).
+
+<blockquote>Example bit-scheme on a mouse brain cross-section: single-cell masks (left) and the cells photocleaved in each round (right)</blockquote>
+![](images/luo_lab_pre_20260309_sl88-117.gif)
+
+To inspect decoded cells and downstream analyses in their tissue context, I also built [Maplet](https://github.com/yiyangc22/Maplet) (DOI: [10.5281/zenodo.22651477](https://doi.org/10.5281/zenodo.22651477)), a standalone browser app that displays spatial sequencing and analysis results in 3D from plain spreadsheets. It runs [directly in the browser](https://yiyangc22.github.io/Maplet/), with no installation.
+
+<blockquote>Maplet displaying a public MERFISH dataset of the mouse hypothalamus (<a href="https://doi.org/10.1126/science.aau5324">Moffitt et al., 2018</a>)</blockquote>
+![](images/maplet_2026_10_preview.jpg)
+
+# Golshani Lab at UCLA
+
+While surveying the developing brain with spatial epigenomic profiling in the Luo Lab, I became interested in overlaying in-vivo activity patterns onto connectome maps by combining imaging and sequencing methods. To learn the state of the art in recording neuronal activity in vivo, I joined the Golshani Lab in April 2026. The lab uses voltage imaging to study how hippocampal population activity relates to navigation, learning, and memory in mice.
+
+Voltage imaging uses fluorescent indicators of membrane voltage to record sub-threshold membrane potential changes that calcium imaging cannot resolve. Its main challenge, in both one- and two-photon voltage imaging, is a low signal-to-noise ratio (SNR): the indicators are intrinsically dim, the high frame rates needed to capture fast voltage dynamics leave few photons per frame, background fluorescence from surrounding tissue adds noise, and photobleaching limits how long each neuron can be recorded.
+
+My work aims to make these recordings, and what we extract from them, as reliable as possible: I trained machine vision models to detect active neurons in voltage imaging recordings, redesigned the lab's high-speed camera acquisition pipeline, and built real-time analysis software for behavioral training and imaging sessions.
+
+## Detecting Firing Neurons in Voltage Imaging Recordings
+
+Before a neuron's activity can be measured, the neuron has to be found, and in voltage imaging, a firing neuron's signal in any single frame is often weaker than the camera noise. Many automated pipelines therefore compress the recording into a few summary images and segment neurons on those images instead: VolPy ([Cai et al., 2021](https://doi.org/10.1371/journal.pcbi.1008806)), for example, feeds a mean image and a correlation image into a Mask R-CNN.
+
+For the Golshani Lab's pipeline, I initially followed the same strategy, compressing each recording into a morphology image and an activity image. Using both images as input channels, I trained [Cellpose](https://github.com/MouseLand/cellpose) models on the lab's hand-annotated recordings, either from scratch or by fine-tuning the Cellpose-SAM foundation model; both recovered roughly 85% of the hand-annotated neurons across the labeled datasets.
+
+This approach has two limitations. First, compressing thousands of frames into two images discards most of the temporal information in the recording, which may help reveal faint neurons through their firing patterns. Second, the models output binary masks, discarding the per-pixel weights that would be useful for trace extraction. I am therefore designing a detector that uses the full temporal information and outputs a probability heatmap that can be used directly for trace extraction.
+
+```
+> video in ─┬ ┄ ┄ average image (for manual segmentation) ┄ ┄ ┬─ trace extraction out >
+            │                                                 │
+            └─ tiling ── model detection ── stitched heatmap ─┘
+```
+
+The open question is how best to give the model temporal information, and I am currently testing three approaches:
+
+**1. Frames as channels.** Keep the existing Cellpose infrastructure, but replace the two summary images with each time chunk's raw frames as input channels. No temporal information within a chunk is lost, but memory use grows with the number of frames, and the network may learn to depend on which frame a spike falls in, rather than on the spike itself.
+
+```
+  OLD                                     NEW
+  ┌─────────────────┐                     ┌────────────────┐
+  │ ch1: morphology │   2 channels  ->    │ *CHUNK 1*      │   X channels in
+  │ ch2: activity   │                     │ ch1: frame 1.1 │   every temporal chunk
+  └─────────────────┘                     │ ch2: frame 1.2 │
+                                          │ ...            │
+                                          │ chX: frame 1.X │
+                                          └────────────────┘
+                                          ┌────────────────┐
+                                          │ *CHUNK 2*      │
+                                          │ ch1: frame 2.1 │
+                                          │ ...            │
+                                          └────────────────┘
+                                          ......
+```
+
+**2. Summary images per chunk.** Keep two summary channels, but compute them for each short time chunk instead of for the whole recording ([Bando et al., 2023](https://doi.org/10.1109/BIBM58861.2023.10385929)). Some temporal information is still lost, but this approach balances speed and accuracy and has published support: on VolPy's hippocampal benchmark, Bando et al.'s chunk-based method raised F1 from 0.66 to 0.74.
+
+```
+  OLD                                     NEW
+  ┌─────────────────┐                     ┌────────────────────┐
+  │ ch1: morphology │   2 channels  ->    │ *CHUNK 1*          │   2 channels in
+  │ ch2: activity   │                     │ ch1: C1 morphology │   every temporal chunk
+  └─────────────────┘                     │ ch2: C1 activity   │
+                                          └────────────────────┘
+                                          ┌────────────────────┐
+                                          │ *CHUNK 2*          │
+                                          │ ch1: C2 morphology │
+                                          │ ch2: C2 activity   │
+                                          └────────────────────┘
+                                          ......
+```
+
+**3. A 3D network.** Use a spatiotemporal network such as STNeuroNet ([Soltanian-Zadeh et al., 2019](https://doi.org/10.1073/pnas.1812995116)), which takes tiled 3D chunks of the raw video as input and outputs a 2D heatmap. This approach uses the most temporal information but carries the most implementation uncertainty, and STNeuroNet has so far been validated only on calcium imaging.
+
+```
+  OLD                                     NEW
+  ┌─────────────────┐                     ┌─────────────────┐
+  │ ch1: morphology │   2 channels  ->    │ 3D VOXEL CHUNK  ├┐   tiled 3D voxel input
+  │ ch2: activity   │                     │ e.g. 144×144 px ││   2D heatmap output
+  └─────────────────┘                     │     ×120 frames ││
+                                          └┬────────────────┘│
+                                           └─────────────────┘
+                                            ......
+```
+
+Each candidate will be scored against the current summary-image pipeline on agreement with hand annotations and on the SNR of the traces it produces; a new model will replace the current one only if it measurably does better.
+
+## Image Acquisition and Behavior Analysis
+
+Every downstream analysis depends on knowing exactly when each frame was taken. The lab's original acquisition software could not guarantee this: its frame-loss estimate was actually measuring save-to-disk delay, and a silent bug could overwrite unread frames whenever the computer fell behind, producing recordings with the expected number of frames that were not consecutive in time. I rebuilt the acquisition software so that the camera itself counts and timestamps every frame in hardware and every frame is tracked from camera to disk, so that lost or duplicated frames are reported rather than hidden.
+
+In parallel, the lab's behavioral experiments (random-reward, spatial-navigation, and working-memory tasks on a treadmill) were previously analyzed in MATLAB only after each session. I rebuilt the behavior-monitoring software in Python to analyze each session as it runs: it shows the mouse's position, licking, and video live alongside a running lick-probability plot, and generates each task's analysis automatically when the session ends, so experimenters can see how a mouse's behavior changes during training or imaging.

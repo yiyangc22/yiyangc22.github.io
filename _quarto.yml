@@ -1,0 +1,37 @@
+# =============================================================================
+#  Site configuration.  Almost everything you'll ever change lives in the .qmd
+#  files (your content) — not here.  This file only wires the pages together:
+#  the navbar, the research sidebar, and the footer.
+#
+#  To add a page: create a new .qmd file, then (if you want it in the menus)
+#  add a line under `navbar:` or `sidebar:` below.  Nothing else required.
+# =============================================================================
+
+project:
+  type: website
+  output-dir: docs          # GitHub Pages serves this folder (Settings → Pages → /docs)
+  resources:
+    - .nojekyll             # copied into docs/ so GitHub Pages skips Jekyll processing
+
+website:
+  favicon: images/favicon.png
+  navbar:
+    pinned: true
+    left:
+      - href: index.qmd
+        text: About
+      - href: research.qmd
+        text: Research
+    right:
+      - icon: github
+        href: https://github.com/yiyangc22
+        aria-label: GitHub
+      - icon: linkedin
+        href: https://linkedin.com/in/ianchen5432953
+        aria-label: LinkedIn
+  page-footer:
+    left: "[yiyangc22@ucla.edu](mailto:yiyangc22@ucla.edu)"
+    right: "Last edited: Oct. 2026"
+format:
+  html:
+    theme: theme.scss
