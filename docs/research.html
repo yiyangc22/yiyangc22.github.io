@@ -145,8 +145,8 @@ ul.task-list li input[type="checkbox"] {
 
 <section id="research-interest" class="level1">
 <h1>Research Interest</h1>
-<p>My goal is to study the structure and function of the human brain quantitatively and to discover how biological mechanisms give rise to cognitive abilities. To this end, I am interested in using high-throughput single-cell sequencing to map the mammalian brain connectome, and in overlaying each cell’s epigenomic identity or in-vivo activity onto that connectome to link neuronal population dynamics with cell biology.</p>
-<p>Recent advances in sequencing (e.g., the MAPseq/BARseq family and Connectome-seq) and imaging (e.g., wide-field voltage imaging and expansion microscopy) are making a functional connectome of the mammalian brain increasingly feasible. Linking activity to structural or sequencing readouts in the same cells remains an open problem, but I am hopeful that future methods will combine the scalability of sequencing with the direct observation of activity that imaging provides, and I want to help build these methods and apply them to the study of brain structure and function.</p>
+<p>My goal is to understand how biological mechanisms give rise to cognition. The question I keep returning to is how a neuron’s molecular identity relate to its connections, activity patterns, and the role it plays in a circuit, and I am currently narrowing this question toward memory, decision making, and visual perception.</p>
+<p>Answering this requires measuring activity, connectivity, and molecular identity in the same neurons. Each can now be measured on its own: imaging records activity in the living brain, electron and expansion microscopy reconstruct wiring, and single-cell sequencing reads identity. But reading identity and wiring requires fixed tissue, so combining them with activity recorded in a living brain remains difficult, and only a few datasets have achieved even two of the three in the same cells. I am interested in adapting and combining existing methods, such as voltage imaging and spatial sequencing, to answer specific biological questions, and eventually in carrying what we learn toward the human brain.</p>
 </section>
 <section id="luo-lab-at-ucla" class="level1">
 <h1>Luo Lab at UCLA</h1>
@@ -173,56 +173,30 @@ Maplet displaying a public MERFISH dataset of the mouse hypothalamus (<a href="h
 </section>
 <section id="golshani-lab-at-ucla" class="level1">
 <h1>Golshani Lab at UCLA</h1>
-<p>While surveying the developing brain with spatial epigenomic profiling in the Luo Lab, I became interested in overlaying in-vivo activity patterns onto connectome maps by combining imaging and sequencing methods. To learn the state of the art in recording neuronal activity in vivo, I joined the Golshani Lab in April 2026. The lab uses voltage imaging to study how hippocampal population activity relates to navigation, learning, and memory in mice.</p>
+<p>While surveying the developing brain with spatial epigenomic profiling in the Luo Lab, I became interested in linking each cell’s molecular identity to what it does in the living brain. To learn the state of the art in recording neuronal activity in vivo, I joined the Golshani Lab in April 2026. The lab uses voltage imaging to study how hippocampal population activity relates to navigation, learning, and memory in mice.</p>
 <p>Voltage imaging uses fluorescent indicators of membrane voltage to record sub-threshold membrane potential changes that calcium imaging cannot resolve. Its main challenge, in both one- and two-photon voltage imaging, is a low signal-to-noise ratio (SNR): the indicators are intrinsically dim, the high frame rates needed to capture fast voltage dynamics leave few photons per frame, background fluorescence from surrounding tissue adds noise, and photobleaching limits how long each neuron can be recorded.</p>
-<p>My work aims to make these recordings, and what we extract from them, as reliable as possible: I trained machine vision models to detect active neurons in voltage imaging recordings, redesigned the lab’s high-speed camera acquisition pipeline, and built real-time analysis software for behavioral training and imaging sessions.</p>
+<p>My work aims to make these recordings, and what we extract from them, as reliable as possible: I am developing machine vision methods to detect active neurons in voltage imaging recordings, and I have redesigned the lab’s high-speed camera acquisition pipeline and built real-time analysis software for behavioral training and imaging sessions.</p>
 <section id="detecting-firing-neurons-in-voltage-imaging-recordings" class="level2">
 <h2 class="anchored" data-anchor-id="detecting-firing-neurons-in-voltage-imaging-recordings">Detecting Firing Neurons in Voltage Imaging Recordings</h2>
 <p>Before a neuron’s activity can be measured, the neuron has to be found, and in voltage imaging, a firing neuron’s signal in any single frame is often weaker than the camera noise. Many automated pipelines therefore compress the recording into a few summary images and segment neurons on those images instead: VolPy (<a href="https://doi.org/10.1371/journal.pcbi.1008806">Cai et al., 2021</a>), for example, feeds a mean image and a correlation image into a Mask R-CNN.</p>
-<p>For the Golshani Lab’s pipeline, I initially followed the same strategy, compressing each recording into a morphology image and an activity image. Using both images as input channels, I trained <a href="https://github.com/MouseLand/cellpose">Cellpose</a> models on the lab’s hand-annotated recordings, either from scratch or by fine-tuning the Cellpose-SAM foundation model; both recovered roughly 85% of the hand-annotated neurons across the labeled datasets.</p>
-<p>This approach has two limitations. First, compressing thousands of frames into two images discards most of the temporal information in the recording, which may help reveal faint neurons through their firing patterns. Second, the models output binary masks, discarding the per-pixel weights that would be useful for trace extraction. I am therefore designing a detector that uses the full temporal information and outputs a probability heatmap that can be used directly for trace extraction.</p>
-<pre><code>&gt; video in ─┬ ┄ ┄ average image (for manual segmentation) ┄ ┄ ┬─ trace extraction out &gt;
-            │                                                 │
-            └─ tiling ── model detection ── stitched heatmap ─┘</code></pre>
-<p>The open question is how best to give the model temporal information, and I am currently testing three approaches:</p>
-<p><strong>1. Frames as channels.</strong> Keep the existing Cellpose infrastructure, but replace the two summary images with each time chunk’s raw frames as input channels. No temporal information within a chunk is lost, but memory use grows with the number of frames, and the network may learn to depend on which frame a spike falls in, rather than on the spike itself.</p>
-<pre><code>  OLD                                     NEW
-  ┌─────────────────┐                     ┌────────────────┐
-  │ ch1: morphology │   2 channels  -&gt;    │ *CHUNK 1*      │   X channels in
-  │ ch2: activity   │                     │ ch1: frame 1.1 │   every temporal chunk
-  └─────────────────┘                     │ ch2: frame 1.2 │
-                                          │ ...            │
-                                          │ chX: frame 1.X │
-                                          └────────────────┘
-                                          ┌────────────────┐
-                                          │ *CHUNK 2*      │
-                                          │ ch1: frame 2.1 │
-                                          │ ...            │
-                                          └────────────────┘
-                                          ......</code></pre>
-<p><strong>2. Summary images per chunk.</strong> Keep two summary channels, but compute them for each short time chunk instead of for the whole recording (<a href="https://doi.org/10.1109/BIBM58861.2023.10385929">Bando et al., 2023</a>). Some temporal information is still lost, but this approach balances speed and accuracy and has published support: on VolPy’s hippocampal benchmark, Bando et al.’s chunk-based method raised F1 from 0.66 to 0.74.</p>
-<pre><code>  OLD                                     NEW
-  ┌─────────────────┐                     ┌────────────────────┐
-  │ ch1: morphology │   2 channels  -&gt;    │ *CHUNK 1*          │   2 channels in
-  │ ch2: activity   │                     │ ch1: C1 morphology │   every temporal chunk
-  └─────────────────┘                     │ ch2: C1 activity   │
-                                          └────────────────────┘
-                                          ┌────────────────────┐
-                                          │ *CHUNK 2*          │
-                                          │ ch1: C2 morphology │
-                                          │ ch2: C2 activity   │
-                                          └────────────────────┘
-                                          ......</code></pre>
-<p><strong>3. A 3D network.</strong> Use a spatiotemporal network such as STNeuroNet (<a href="https://doi.org/10.1073/pnas.1812995116">Soltanian-Zadeh et al., 2019</a>), which takes tiled 3D chunks of the raw video as input and outputs a 2D heatmap. This approach uses the most temporal information but carries the most implementation uncertainty, and STNeuroNet has so far been validated only on calcium imaging.</p>
-<pre><code>  OLD                                     NEW
-  ┌─────────────────┐                     ┌─────────────────┐
-  │ ch1: morphology │   2 channels  -&gt;    │ 3D VOXEL CHUNK  ├┐   tiled 3D voxel input
-  │ ch2: activity   │                     │ e.g. 144×144 px ││   2D heatmap output
-  └─────────────────┘                     │     ×120 frames ││
-                                          └┬────────────────┘│
-                                           └─────────────────┘
-                                            ......</code></pre>
-<p>Each candidate will be scored against the current summary-image pipeline on agreement with hand annotations and on the SNR of the traces it produces; a new model will replace the current one only if it measurably does better.</p>
+<p>In the Golshani Lab’s pipeline, this step is still done by hand: after each recording is motion-corrected, an experimenter outlines every firing neuron before its trace, spike times, and SNR are extracted. I am building a tool that replaces only this manual step. It takes the same motion-corrected video as input and returns an outline and a probability heatmap for each active neuron, so its output can go straight into the lab’s existing trace extraction. Every approach is developed on a subset of the lab’s hand-annotated recordings and scored on a recording it has never seen, since that is how the tool will be used.</p>
+<pre><code>&gt; motion-corrected video ─┬ ┄ ┄ hand-drawn outlines (current) ┄ ┄ ┬─ trace extraction &gt;
+                          │                                       │
+                          └─ model detection: outlines + heatmap ─┘</code></pre>
+<p><strong>A single network on summary images.</strong> As a benchmark, I first rebuilt the lab’s existing approach: compress the video into an average image, which shows each cell’s shape, and an activity image, which highlights pixels that flash, then train <a href="https://github.com/MouseLand/cellpose">Cellpose</a> on both as two input channels. This asks one network to learn, from a small number of hand-drawn neurons, both what a neuron looks like and whether it fires, while the summary images discard when each flash happened.</p>
+<p><strong>Two stages: find every cell, then decide which ones fire.</strong> Because shape and firing are different problems, I split them. In the two-stage design I am now building, the first stage uses Cellpose, fine-tuned on the lab’s own images, to identify every cell in the recording, active or not. The second stage returns to the full video and uses a custom (2+1)D video model, which separates spatial and temporal convolutions (<a href="https://doi.org/10.1109/CVPR.2018.00675">Tran et al., 2018</a>), to decide which of those cells fire. Splitting the problem this way lets each stage learn from the kind of annotation that suits it best.</p>
+<pre><code>  SINGLE NETWORK                          TWO STAGES
+  ┌─────────────────┐                     ┌────────────────────────┐
+  │ ch1: average    │   one network -&gt;    │ STAGE 1: find cells    │   every cell,
+  │ ch2: activity   │                     │ fine-tuned Cellpose    │   active or not
+  │ -&gt; Cellpose     │                     │ -&gt; cell outlines       │
+  └─────────────────┘                     └───────────┬────────────┘
+                                          ┌───────────┴────────────┐
+                                          │ STAGE 2: which fire?   │   custom model on
+                                          │ (2+1)D video model     │   the full video
+                                          │ spatial, then temporal │
+                                          │ -&gt; active neurons      │
+                                          └────────────────────────┘</code></pre>
 </section>
 <section id="image-acquisition-and-behavior-analysis" class="level2">
 <h2 class="anchored" data-anchor-id="image-acquisition-and-behavior-analysis">Image Acquisition and Behavior Analysis</h2>
